@@ -1,0 +1,29 @@
+[project]
+name = "math-modeling-per-question-skill"
+version = "1.1.0"
+description = "Branch of the math modeling competition skill that delivers each sub-question separately (modeling answer, code, output data, writer prompt) with full per-question Agent gates, verification and judge review, deferring all figures to a unified Phase F."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "math-modeling-per-question contributors" }
+]
+dependencies = [
+  "pandas>=2.0.0",
+  "openpyxl>=3.1.0",
+  "matplotlib>=3.7.0",
+  "numpy>=1.24.0",
+  "Pillow>=10.0.0",
+  "scipy>=1.11.0",
+  "pypdf>=4.0.0",
+  "python-docx>=1.1.0",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=7.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]

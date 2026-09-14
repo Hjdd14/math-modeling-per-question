@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "workspace": "D:\\Code_Work\\My_Projects\\math_modeling_eq\\math-modeling-per-question\\tests\\test_data\\per_question_workspace\\questions\\q2",
+  "language": "python",
+  "current_phase": "phase0",
+  "phases": {},
+  "artifacts": {
+    "problem_brief": {
+      "path": "problem_brief.md",
+      "exists": false,
+      "kind": "file"
+    },
+    "modeling_memory": {
+      "path": "modeling_memory.md",
+      "exists": false,
+      "kind": "file"
+    },
+    "final_solution": {
+      "path": "final_solution.json",
+      "exists": false,
+      "kind": "file"
+    },
+    "model_decision": {
+      "path": "model_decision.md",
+      "exists": false,
+      "kind": "file"
+    },
+    "writer_prompt": {
+      "path": "writer_prompt.md",
+      "exists": false,
+      "kind": "file"
+    },
+    "results_dir": {
+      "path": "results",
+      "exists": true,
+      "kind": "directory",
+      "entry_count": 0
+    },
+    "solution": {
+      "path": "solution.py",
+      "exists": false,
+      "kind": "file"
+    }
+  },
+  "tool_runs": [],
+  "agent_runs": [],
+  "issues": [],
+  "updated_at": "2026-09-14T12:17:58.627581+00:00",
+  "phase_inference": {
+    "inferred_phase": "phase0",
+    "writer_prompt_exists": false,
+    "solution_exists": false,
+    "results_entry_count": 0,
+    "validation_summary_exists": false
+  }
+}

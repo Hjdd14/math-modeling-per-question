@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "workspace": "D:\\Code_Work\\My_Projects\\math_modeling_eq\\math-modeling-per-question\\tests\\test_data\\per_question_workspace",
+  "language": "python",
+  "questions": [
+    {
+      "id": "q1",
+      "title": "q1",
+      "status": "pending",
+      "depends_on": [],
+      "workspace": "questions/q1",
+      "artifacts": {
+        "modeling_answer": "questions/q1/modeling_answer.md",
+        "writer_prompt": "questions/q1/writer_prompt.md",
+        "solution": "questions/q1/solution.py",
+        "results": "questions/q1/results"
+      },
+      "judge_overall_score": null,
+      "completed_at": null
+    },
+    {
+      "id": "q2",
+      "title": "q2",
+      "status": "pending",
+      "depends_on": [
+        "q1"
+      ],
+      "workspace": "questions/q2",
+      "artifacts": {
+        "modeling_answer": "questions/q2/modeling_answer.md",
+        "writer_prompt": "questions/q2/writer_prompt.md",
+        "solution": "questions/q2/solution.py",
+        "results": "questions/q2/results"
+      },
+      "judge_overall_score": null,
+      "completed_at": null
+    }
+  ],
+  "updated_at": "2026-09-14T12:17:58.629016+00:00"
+}
