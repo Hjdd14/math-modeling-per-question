@@ -66,6 +66,114 @@ python "tools/workflow_runner.py" scaffold --workspace "." --language python --q
 - 哪些地方适合突出模型创新。
 - 哪些要求属于格式、精度、匿名性、AI 使用披露或解释性扣分点。
 
+## Phase 0.5: 设计闸门（整题一次，代码编写前）
+
+Phase 0 建好 `question_queue.json` 后进入本阶段。与主仓库 math-modeling 的 Phase 0.5 同源，唯一差别是
+**一块板覆盖全部小问**（每题一个 entry，`id` 与队列的 `id` 严格一致）。
+
+### 0.5.1 三条硬性规则
+
+1. **AI 只写提议**：候选方案、推荐理由、风险、试算数值都由 AI 落盘到 `design_board.json`；
+2. **用户通道才写回执**：用户改的选择/批注只能通过 `serve` 页面、`design_choices.xlsx` 或下载 JSON 回传，再由 `ingest` 写入 `design_rounds/`；
+3. **只有 `confirm` 能写确认**：`confirmed` / `confirmed_at` / `confirmed_by` / `confirm_code` / `confirm_attested` 只由 `design_board.py confirm --apply` 写入，且必须由**用户本人**在真实终端敲 4 位确认码。
+
+### 0.5.2 design_board.json（分小问形态）
+
+一块板、`questions[]` 覆盖全部小问，字段与主仓库 §4.2 相同，只强调三点：
+
+```json
+{
+  "questions": [
+    {"id": "q1", "goal": "q1 的目标", "options": [{"id": "O1", "name": "候选A", "...": "..."}, {"id": "O2", "name": "候选B"}],
+     "user_choice": "O1", "user_locked": true, "confirmed": true},
+    {"id": "q2", "goal": "q2 的目标", "options": ["..."], "user_choice": "O1", "user_locked": true, "confirmed": true}
+  ]
+}
+```
+
+- `questions[].id` 必须与 `question_queue.json` 的 `id` 一一对应（防止板与实际交付漂移）；
+- 每问至少 2 个候选；每个候选必须有 `rationale` / `risk` / `source_ref` / `mini_trial`；
+- `board_sha256` 与 `confirm_code` 只能由 `render` 写。
+
+### 0.5.3 收敛判据（5 条，全部满足才允许确认）
+
+1. `no_change_rounds >= 2`；
+2. 最后一轮 `design_rounds/*.json` 的 `user_edited == false`；
+3. 每题都有 `user_choice`；
+4. `pending_decisions` 为空；
+5. `board_sha256` 与当前内容一致。
+
+### 0.5.4 四个子命令
+
+```bash
+python "tools/design_board.py" render --workspace "." --format all
+python "tools/design_board.py" ingest --workspace "." --from "user_submission.json"
+python "tools/design_board.py" ingest --workspace "." --from "design_choices.xlsx"
+python "tools/design_board.py" serve --workspace "."
+python "tools/design_board.py" status --workspace "."
+python "tools/design_board.py" confirm --workspace "."
+python "tools/design_board.py" confirm --workspace "." --apply
+```
+
+- `render`：生成 md/html/xlsx（`--format all`），同时回写 `board_sha256` 与 4 位确认码；
+- `ingest`：读 JSON 或 xlsx 回执，写 `design_rounds/round_NNN.json`，维护 `no_change_rounds`；
+- `serve`：起本地回传服务器（只绑 `127.0.0.1`，页面带一次性 token），用户在页面上选完点提交即写回执；无服务器时页面自动降级为下载 JSON；
+- `status`：输出轮次、收敛进度、待确认项与 `ready_to_confirm`；
+- `confirm`：默认 dry-run；`--apply` 要求交互式输入确认码。`--skip-interactive` 是逃生口，会写 `confirmed_by: "user_non_interactive"`，checker 标 `confirm_not_attested`（standard 留痕，**excellence 判不通过**）。
+
+### 0.5.5 时间线校验（防"先写代码、后补板"）
+
+`design_board_checker` 会把这些文件的 mtime 与 `confirmed_at`（容差 5 秒）比较：
+
+```
+根目录 solution.{py,m} / solution_tests.* / results/**
+questions/qN/solution.{py,m} / questions/qN/solution_tests.* / questions/qN/results/**
+```
+
+**分小问形态必须扫 `questions/qN/`**，否则这条防线在本分支上完全失效。违者判 `code_written_before_confirm`。夹具目录（`tests/test_data`、`examples/solved-python`、`examples/design-board-sample`）自动豁免。
+
+### 0.5.6 交叉校验（板与每问的模型选择审计对账）
+
+板里每个小问去找它的审计并对账：
+
+1. `questions/<id>/model_selection_audit.json`（分小问形态），找不到退回根 `model_selection_audit.json`（整题形态）；
+2. `user_choice` 对应的候选名必须能匹配审计的 `final_selection.name` → 否则 `board_audit_selection_mismatch`（error）；
+3. 板的候选名与审计的 `candidates[].name` 至少有一对能归一化匹配 → 否则 `board_audit_candidate_mismatch`（error）；
+4. **审计暂不存在**时判 `board_audit_pending`（warning，不阻断）——因为本分支的审计在 Phase 1-Q 才产出，而闸门确认在此之前；审计的存在性由 `model_selection_checker` 在 excellence 下兜住。
+
+### 0.5.7 写权限归属
+
+| 文件 / 字段 | 谁能写 |
+|---|---|
+| `design_board.json` 的候选、理由、风险、试算 | AI（`render` 前） |
+| `design_board.json` 的 `user_choice` / `user_comment` | 只能由 `ingest`（读用户回执）写 |
+| `design_board.json` 的 `confirmed*` / `confirm_code` / `confirm_attested` | 只能由 `confirm --apply` 写 |
+| `design_rounds/*.json` | 只能由 `ingest` 写 |
+| `design_board.md/.html/.xlsx` | 只能由 `render` 写 |
+
+### 0.5.8 重开闸门（改板后必须重新确认）
+
+若某问在 Phase 1-Q 发现板里的候选不成立：
+
+1. 改 `design_board.json` 里该问的 options；
+2. `render --format all` 重新生成 → `board_sha256` 与 `confirm_code` 都会变；
+3. 重新走 ingest → 连续 2 轮无修改；
+4. **用户本人**重新 `confirm --apply` 输入新确认码；
+5. 之后才能继续写该问代码。
+
+### 0.5.9 旧工作区迁移
+
+```bash
+python "tools/migrate_workspace.py" --workspace "."          # dry-run
+python "tools/migrate_workspace.py" --workspace "." --apply  # 落地骨架
+```
+
+有 `question_queue.json` 时按题建板（每题从 `questions/qN/model_selection_audit.json` 推断候选）；没有则按整题形态建单题板。骨架里 `source_ref.verified=false` 且带 `unverified_reason`，**不写任何确认字段**——用户必须自己重新走 render → confirm。过渡期可用 `design_board_checker --allow-legacy` 把"缺板"降为 warning。
+
+### 0.5.10 为什么只确认一次
+
+本分支的价值是"每问完成即可交论文手并行写作"。若每问都要确认一次，用户会被打断 N 次，且与"代码编写前流程保持一致"的要求不符。整题一次的代价是 AI 必须在深挖建模前就列出全部小问的候选——这可以从 `problem_brief.md` + `award_playbook.md` 方法卡做到。闸门开一次之后，逐问交付不再受二次阻塞。
+
 ## 小问循环总规则
 
 对 `question_queue.json` 中的每个小问，按队列顺序串行执行 Phase 1-Q → Phase 2-Q/3-Q → Phase 4-Q → 完成宣告。硬性规则：

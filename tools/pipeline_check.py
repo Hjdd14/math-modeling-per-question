@@ -36,6 +36,7 @@ try:
     from tools.case_retrieval_checker import check_case_retrieval
     from tools.compliance_checker import check_compliance
     from tools.writer_prompt_checker import check_writer_prompt
+    from tools.design_board_checker import check_design_board
 except ImportError:
     from award_readiness_checker import check_award_readiness
     from brief_completeness_checker import check_brief_completeness
@@ -65,6 +66,78 @@ except ImportError:
     from case_retrieval_checker import check_case_retrieval
     from compliance_checker import check_compliance
     from writer_prompt_checker import check_writer_prompt
+    from design_board_checker import check_design_board
+
+
+# 决策产物硬门：这两个是"AI 到底选了哪个模型、为什么"的唯一载体，缺了就不算交付。
+DECISION_ARTIFACTS = ("final_solution.json", "model_decision.md")
+STRICT_MODES = {"strict", "hard", "complete", "full", "excellence"}
+
+
+def _check_decision_artifacts(root: Path, quality_mode: str) -> dict:
+    """决策产物硬门：`final_solution.json` 与 `model_decision.md` 必须存在。
+
+    standard 模式只 warning（保持旧工作区兼容），strict/excellence 判 error。
+    """
+    mode = (quality_mode or "standard").lower()
+    strict = mode in STRICT_MODES
+    severity = "error" if strict else "warning"
+    missing = [name for name in DECISION_ARTIFACTS if not (root / name).is_file()]
+    issues: list[dict] = []
+    for name in missing:
+        issues.append(
+            {
+                "code": "missing_decision_artifact",
+                "severity": severity,
+                "message": f"缺少决策产物 {name}：模型选择与裁决理由必须落盘，否则无法复核 AI 到底选了什么。",
+                "file": name,
+            }
+        )
+    passed = not any(issue["severity"] == "error" for issue in issues)
+    return {
+        "workspace": str(root),
+        "mode": mode,
+        "passed": passed,
+        "warning": any(issue["severity"] == "warning" for issue in issues),
+        "checks": [{"name": "decision_artifacts", "passed": not missing, "missing": missing}],
+        "issues": issues,
+    }
+
+
+def _design_board_gate(root: Path, quality_mode: str, stage: str) -> dict:
+    """设计闸门（Phase 0.5）的挂载点，**按 stage 决定校验范围**。
+
+    分小问分支的特殊性：一个题只有一块板，`design_board.json` 落在**工作区根目录**；
+    而 `--stage question` 跑的是 `questions/qN/` 小问工作区，那里本来就不该有板。
+    若照主仓库那样无条件挂载，小问工作区的 excellence 会永久红在
+    `missing_design_board` 上，等于把"逐问交付、论文手并行写作"这条分支价值直接锁死。
+
+    因此：
+
+    - `stage != "question"`（即 `--stage final`）→ **无条件**全量校验，最终交付绕不过去；
+    - `stage == "question"` 且小问工作区里**真有**板 → 照常全量校验（有人把小问当独立题的场景）；
+    - `stage == "question"` 且没有板 → 返回"已跳过（scope 在根工作区）"的中性结果。
+    """
+    if stage != "question" or (root / "design_board.json").exists():
+        return check_design_board(str(root), quality_mode)
+    return {
+        "workspace": str(root),
+        "mode": quality_mode,
+        "path": str(root / "design_board.json"),
+        "passed": True,
+        "warning": True,
+        "skipped": True,
+        "skip_reason": "design_board_gate_scope_root_only",
+        "checks": [
+            {
+                "name": "design_board",
+                "passed": True,
+                "skipped": True,
+                "note": "小问工作区不校验决策板：一个题只有一块板，位于工作区根目录；--stage final 处强制。",
+            }
+        ],
+        "issues": [],
+    }
 
 
 def output(result: dict):
@@ -95,6 +168,7 @@ RECOMMENDED_ARTIFACTS = (
     "modeling_memory.md",
     "baseline_solution.json",
     "case_retrieval.json",
+    "design_board.json",
     "model_selection_audit.json",
     "model_spec.json",
     "optimization_certificate.json",
@@ -105,8 +179,6 @@ RECOMMENDED_ARTIFACTS = (
     "solver_strategy.json",
     "ablation_study.json",
     "innovation_register.json",
-    "final_solution.json",
-    "model_decision.md",
     "writer_prompt.md",
     "figure_style.json",
     "figure_storyboard.md",
@@ -270,6 +342,8 @@ def run_checks(
     _safe("source_freshness_checker", checks, lambda: check_source_freshness(str(Path(__file__).resolve().parents[1]), quality_mode, online=False))
     if online_source_materials:
         _safe("source_material_reader", checks, lambda: check_source_materials(str(Path(__file__).resolve().parents[1]), quality_mode))
+    _safe("decision_artifacts", checks, lambda: _check_decision_artifacts(root, quality_mode))
+    _safe("design_board_checker", checks, lambda: _design_board_gate(root, quality_mode, stage))
     _safe("award_readiness_checker", checks, lambda: check_award_readiness(str(root), quality_mode))
     _safe("case_retrieval_checker", checks, lambda: check_case_retrieval(str(root), quality_mode))
     _safe("innovation_checker", checks, lambda: check_innovations(str(root), quality_mode))

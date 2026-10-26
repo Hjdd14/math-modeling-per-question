@@ -28,7 +28,7 @@
 
 `math-modeling-per-question` 是 `math-modeling` 的**按小问分别交付分支**，为 **数学建模竞赛**（CUMCM、美赛 MCM/ICM、研究生赛、MathorCup、电工杯、深圳杯、统计建模大赛等）量身打造。它能接入 Claude Code、OpenCode、Codex 等支持 Skill 协议的 Agent 宿主，把原本需要人手工完成的建模工程流程**结构化并自动化**。
 
-与原版的唯一核心差异：**整题一次性交付改为每个小问独立完整交付**。每完成一个小问就立即产出该问独立的 `modeling_answer.md`（建模解答）、`writer_prompt.md`（写作提示词）、`solution.py/.m`（代码）与 `results/`（输出数据），经完整检验与多评委评分通过后在对话中宣告"第 N 小问已完成"，论文手可立即开始该问写作，无需等待其余小问；全部小问的建模代码结束后，统一绘制全部图表（每问至少 5 张证据图 + 跨问对比图 + 整题概览图）。Phase 0（题目复现、题意审计、评分策略）与原版完全一致。
+与原版的唯一核心差异：**整题一次性交付改为每个小问独立完整交付**。Phase 0.5「设计闸门」与原版完全同源（`question_queue.json` 建立后、任何代码之前，用户确认一次），确认之后即进入逐问串行交付：每问完成 → 立即宣告 → 论文手开始写该问，不必等其余小问。每完成一个小问就立即产出该问独立的 `modeling_answer.md`（建模解答）、`writer_prompt.md`（写作提示词）、`solution.py/.m`（代码）与 `results/`（输出数据），经完整检验与多评委评分通过后在对话中宣告"第 N 小问已完成"，论文手可立即开始该问写作，无需等待其余小问；全部小问的建模代码结束后，统一绘制全部图表（每问至少 5 张证据图 + 跨问对比图 + 整题概览图）。Phase 0（题目复现、题意审计、评分策略）与原版完全一致。
 
 ### 它做什么 ✅
 
@@ -63,6 +63,7 @@
 | 阶段 | 做什么 | 关键产物 |
 |------|--------|----------|
 | **Phase 0** 题目与数据 | 解析题目与附件，建立数据契约与题意审计，建立小问队列（与原版相同 + 队列建立） | `problem_brief.md`、`ambiguity_register.json`、`assumption_ledger.md`、`data_schema.json`、`question_queue.json` |
+| **Phase 0.5** 设计闸门 | 一块板覆盖全部小问：每题 2+ 候选算法 + 推荐理由 + 真实试算；用户改选/批注后，**由用户本人**输入 4 位确认码放行，确认前不允许写任何小问的代码 | `design_board.json`、`design_rounds/`、`design_board.md/.html`、`design_choices.xlsx`、`mini_trials.json` |
 | **小问循环 · Phase 1-Q** 并行建模共识 | 每个小问独立跑 5 视角建模 + 动态专家 + 资料库检索，并行批评与修正，最终裁决 | `questions/qN/baseline_solution.json`、`final_solution.json`、`model_decision.md`、`innovation_register.json` |
 | **小问循环 · Phase 2-Q/3-Q** 写作交接 + 代码 | 该问写作交接文档 Agent 与代码 Agent 并行，生成契约测试与可运行代码；随后撰写建模解答；**只产数据不绘图** | `questions/qN/writer_prompt.md`、`modeling_answer.md`、`solution.py/.m`、`results/validation_summary.json` |
 | **小问循环 · Phase 4-Q** 评审验证 | 语法/逻辑/输出三 Agent 并行，独立复现，五评委并行审查，`pipeline_check --stage question` 工具 gate，通过后在对话宣告完成 | `questions/qN/judge_panel_review.json`、`decision_insights.md`、`defense_questions.md` |

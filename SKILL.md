@@ -20,6 +20,7 @@ description: 用于数学建模竞赛或类似多阶段建模任务，并且需�
 5. `references/award_playbook.md`：权威竞赛案例方法谱系和题型方法卡片。
 6. `references/evaluator_panel.md`：多评委并行审查角色、评分字段和 chair judge 汇总规则。
 7. `references/evals.md`：本地 eval、Claude 实跑 eval、触发描述优化流程。
+8. `docs/DESIGN_GATE_PLAN.md`：设计闸门（Phase 0.5）的完整规格、确认码机制、交叉校验、时间线校验，以及本分支的分小问适配（§21）。
 
 如果引用文档与本主文件冲突，以本主文件的核心约束为准；如果用户的显式要求更具体，以用户要求为准。
 
@@ -41,6 +42,9 @@ description: 用于数学建模竞赛或类似多阶段建模任务，并且需�
 14. 奖项级交付必须使用题意完成度、模型选择审计、优化证书、不确定性预算、题型 profile、数据泄漏、统计验证、模型规范、数据契约、自动测试、数值鲁棒性、图表语义证据、多评委并行审查、创新筛选、合规复现和写作交接闭环；每个小问在其工作区运行 `pipeline_check.py --stage question --quality-mode excellence`，整题交付前在根工作区运行 `--stage final --quality-mode excellence`。
 15. 每个小问的 `model_spec.json`、`model_selection_audit.json`、`validation_profile.json`、`symbol_table.json`、`solver_strategy.json`、`innovation_register.json` 和 `writer_prompt.md` 是该问模型、代码、验证器和后续写作之间的对齐基准。
 16. 小问之间允许单向依赖：后求解的小问可以读取已宣告完成小问的 `final_solution.json` 与 `results/` 作为输入，但不得修改已完成小问的任何产物。
+17. **Phase 0.5 是本分支的硬性闸门**：`question_queue.json` 建立后、进入小问循环之前，必须先产出一块覆盖全部小问的 `design_board.json` 并渲染视图，由用户确认；**确认之前不允许写任何代码**（包括 `questions/qN/solution.py`）。
+18. `design_board.py confirm --apply` 必须由用户本人在真实终端执行并输入 4 位确认码；AI 不得代跑、不得代填，也不得用 `--skip-interactive` 冒充人工确认（那会留 `confirm_not_attested` 痕迹，excellence 判不通过）。
+19. 若某问在 Phase 1-Q 发现板里的候选不成立，**必须重开闸门**（改板 → 重新 render → 重新收敛 → 用户重新确认）后才能继续写该问代码；不允许改板后直接写代码。
 
 ## 固定产物
 
@@ -60,6 +64,10 @@ description: 用于数学建模竞赛或类似多阶段建模任务，并且需�
 | `modeling_state.json` | 全程 | 机器可读状态（整题进度） |
 | `modeling_memory.md` | 全程 | 人类可读过程记忆（整题进度） |
 | `case_retrieval.json` | Phase 1 | 全局相似题型检索（各小问检索的公共参考，可选） |
+| `design_board.json` | **Phase 0.5** | 决策板主数据：一块板覆盖全部小问，每题 2+ 候选 + 推荐理由 + 真实试算 + 用户选择 + 确认状态（**唯一真实来源**） |
+| `design_rounds/round_NNN.json` | **Phase 0.5** | 每轮回执：用户改了什么、回传来源与 nonce |
+| `design_board.md` / `.html` / `design_choices.xlsx` | **Phase 0.5** | 决策板渲染视图（Mermaid/SVG 导图 + 对比表 + 4 位确认码）；由 `render` 生成，可重新生成 |
+| `mini_trials.json` | **Phase 0.5** | 每个候选在小样本上的真实试算结果与复跑命令（禁止手填估计值） |
 
 ### 每问产物（`questions/qN/`，每个小问一份）
 
@@ -156,9 +164,29 @@ python "tools/pipeline_check.py" --workspace "." --language python --stage final
 
 确认后**额外执行一步**：根据 `scoring_strategy.md` 的小问清单，用 `--questions` 或 `tools/question_queue.py init` 建立 `question_queue.json`（含小问依赖关系），与用户确认求解顺序，然后更新 `modeling_state.json` 与 `modeling_memory.md`。
 
+### Phase 0.5: 设计闸门（整题一次，代码编写前）
+
+`question_queue.json` 建立并确认后进入本阶段。目标是让用户在写任何代码前看到**全部小问**的候选算法对比、推荐理由与真实试算，并亲自确认。本阶段与主仓库 math-modeling 的 Phase 0.5 完全同源，差别只有一处：**一块板覆盖全部小问**（每题一个 entry，`id` 与队列一致）。
+
+1. 为每个小问产 2+ 个候选算法：每个候选必须带 `rationale`、`source_ref`（方法卡出处，含 tier 与 verified）、`complexity`、`dependencies`、`risk`、`mini_trial`。
+2. 候选必须有**真实试算数值**：`python "tools/mini_trial.py" run --workspace "." --trial "<复跑命令>" --label "<候选名>"` 实跑一遍并落 `mini_trials.json`；禁止手填估计值。
+3. 运行 `python "tools/design_board.py" render --workspace "." --format all` 生成 `design_board.md` / `.html` / `design_choices.xlsx`（含导图、对比表、4 位确认码）。
+4. 交给用户改（改选择、写批注）。三条通道任选其一，语义等价：页面直选（`design_board.py serve`）/ Excel（`ingest --from design_choices.xlsx`）/ 下载 JSON（`ingest --from design_board_submission.json`）。
+5. 重复至连续 2 轮无修改、无待决项、`board_sha256` 与内容一致。
+6. **由用户本人**运行 `python "tools/design_board.py" confirm --workspace "." --apply` 并输入 4 位确认码。AI 不得代跑。
+7. 运行 `python "tools/design_board_checker.py" --workspace "." --mode excellence` 验证板与时间线。
+8. 确认通过后才允许进入小问循环；每个小问的 Phase 1-Q 必须 honoring 板里该问的 `user_locked` 选择。
+
+> 确认只做**一次**、且在所有小问的代码之前——这正是本分支"逐问交付 + 论文手并行写作"能成立的前提：闸门开一次，之后每问完成即可交论文手，不再二次阻塞。
+> 若某问在 Phase 1-Q 发现候选不成立：改板 → 重新 render → 重新收敛 → **用户重新确认**（确认码会变），之后才能继续写代码。
+> 旧项目先跑 `python "tools/migrate_workspace.py" --workspace "."`（dry-run）再 `--apply` 生成骨架；骨架**不会**伪造确认状态，用户必须自己走完 render → confirm。
+> 若宿主支持 hook，装 `hooks/pre_tool_use_guard.py`（见 `hooks/README.md`）可在 AI 试图写 `solution.py` 时硬拦——这是 L5 防线，前四层在 skill 内部。
+
 ### 小问循环：对 `question_queue.json` 中每个小问顺序执行
 
 #### Phase 1-Q: 该问并行建模共识
+
+本问的建模必须 honoring Phase 0.5 板里该问 `user_locked: true` 的选择，不得推翻——要换模型必须先重开闸门。
 
 为该问写入 `questions/qN/problem_brief.md`（全局上下文摘要 + 该问目标）与 `problem_taxonomy.json`，再由该问资料库检索 Agent 读取 `competition_sources.json` 和 `award_playbook.md` 输出该问 `case_retrieval.json`。五个视角 Agent 并行生成方案（硬性 gate），按题型最多追加 3 个动态专家 Agent，随后并行批评、并行修正，创新筛选 Agent 生成该问 `innovation_register.json`，最后由裁决 Agent 生成该问 `baseline_solution.json`、`model_spec.json`、`solver_strategy.json`、`ablation_study.json`、`final_solution.json` 与 `model_decision.md`。本阶段不生成正式写作正文。有依赖的小问可读取已完成小问的 `final_solution.json` 与 `results/` 作为输入。
 
@@ -228,6 +256,11 @@ python tests/run_all_tests.py
 python "tools/pipeline_check.py" --workspace "tests/test_data" --language python
 python "tools/pipeline_check.py" --workspace "tests/test_data" --language python --evidence-mode strict --quality-mode excellence
 python "tools/pipeline_check.py" --workspace "tests/test_data" --language python --stage question
+python "tools/design_board.py" status --workspace "tests/test_data"
+python "tools/design_board_checker.py" --workspace "tests/test_data" --mode excellence
+python "tools/mini_trial.py" status --workspace "tests/test_data"
+python "tools/tools_sync_checker.py" --primary "../../../C/Users/PC/.agents/skills/math-modeling" --branch "."
+python "hooks/selftest.py"
 python "tools/question_queue.py" status --workspace "tests/test_data/per_question_workspace"
 python "tools/source_registry_checker.py" --skill-root "." --mode excellence
 python "tools/source_freshness_checker.py" --workspace "." --mode excellence

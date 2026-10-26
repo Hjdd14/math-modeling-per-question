@@ -147,6 +147,80 @@
 }
 ```
 
+## design_board.json
+
+这是 Phase 0.5「设计闸门」的唯一真实来源。**分小问分支**里它放在工作区根目录，
+一块板覆盖 `question_queue.json` 里的**全部小问**（每题一个 entry，`id` 用小问 id，如 `q1`）。
+`design_board.md` / `design_board.html` / `design_choices.xlsx` 都是它的渲染视图，不参与校验。
+
+```json
+{
+  "schema_version": 1,
+  "board_id": "b-YYYY-MM-DD-xxxx",
+  "board_sha256": "<由 design_board.py render 计算写入，不要手写>",
+  "language": "python",
+  "created_at": "ISO8601",
+  "revision": 1,
+  "problem_summary": {
+    "title": "题目名称",
+    "questions": ["q1 的目标", "q2 的目标"],
+    "key_ambiguities": [
+      {"id": "A1", "severity": "medium", "issue": "碳排上限是全周期还是单位时间", "resolution": "pending"}
+    ]
+  },
+  "mindmap": {"format": "mermaid", "source": "graph LR\n  P[题目] --> Q1[q1]\n  P --> Q2[q2]"},
+  "questions": [
+    {
+      "id": "q1",
+      "goal": "该小问要回答的问题",
+      "options": [
+        {
+          "id": "O1",
+          "name": "候选方案名（必须能与 questions/q1/model_selection_audit.json 的 candidates[].name 匹配）",
+          "tier": "recommended",
+          "rationale": "为什么推荐它",
+          "source_ref": {"type": "method_card", "ref": "OPT-01", "tier": "tier_a", "verified": true},
+          "complexity": "O(可行整点数)",
+          "dependencies": [],
+          "risk": "误用风险",
+          "mini_trial": {"sample": "小样本说明", "output": {"objective": 0}, "seconds": 0.0, "reproduce_cmd": "python questions/q1/solution.py --method demo"}
+        }
+      ],
+      "user_choice": "O1",
+      "user_locked": true,
+      "user_comment": "",
+      "confirmed": false
+    },
+    {
+      "id": "q2",
+      "goal": "第二个小问要回答的问题",
+      "options": [{"id": "O1", "name": "候选 A", "tier": "recommended", "rationale": "...", "source_ref": {"type": "method_card", "ref": "OPT-02", "tier": "tier_a", "verified": true}, "complexity": "...", "dependencies": [], "risk": "...", "mini_trial": {"sample": "...", "output": {}, "seconds": 0.0}}],
+      "user_choice": "O1",
+      "user_locked": true,
+      "user_comment": "",
+      "confirmed": false
+    }
+  ],
+  "pending_decisions": [],
+  "no_change_rounds": 0,
+  "confirmed_at": null,
+  "confirmed_by": null,
+  "receipt_origin": null,
+  "confirm_code": null,
+  "confirm_attested": false
+}
+```
+
+**硬规则**
+
+1. 一块板、覆盖全部小问；`questions[].id` 必须与 `question_queue.json` 的 `id` 一一对应（防止板与队列漂移）。
+2. 每题至少 2 个候选；每个候选必须有 `rationale` / `risk` / `source_ref` / `mini_trial`。
+3. `source_ref.verified = false` 时必须写 `unverified_reason`。
+4. `user_choice` 必须是该题 `options[].id` 之一。
+5. `confirmed: true` 时必须有 `confirmed_at` / `confirmed_by` / `receipt_origin` / `confirm_code`（4 位）/ `confirm_attested`，且 `no_change_rounds >= 2`。
+6. `board_sha256` 与 `confirm_code` 只能由 `tools/design_board.py render` 写；手写的确认码会被判 `confirm_code_mismatch`。
+7. 若在 Phase 1-Q 发现某问的候选不成立，改板后哈希会变，**必须重新 render + 重新收敛 + 由用户重新确认**（不允许改板后继续写代码）。
+
 ## model_selection_audit.json
 
 ```json
@@ -438,6 +512,9 @@
 
 ## validation_summary.json
 
+> ⚠️ 本示例是**结构参考**，不是可用证据。照抄后必须把每一项换成真实计算值，并把 `status` 改为 `passed`/`failed`。
+> `evidence_checker.py` 与 `robustness_checker.py` 会把仍含 `NOT_VALIDATED` 的 payload 判为失败。
+
 ```json
 {
   "baseline_comparison": {
@@ -445,14 +522,16 @@
     "metric": "objective_or_error",
     "baseline_value": 0,
     "model_value": 0,
-    "passed": true
+    "status": "NOT_VALIDATED",
+    "passed": null
   },
   "oracle_tests": [
     {
       "name": "small_known_case",
       "expected": 0,
       "actual": 0,
-      "passed": true
+      "status": "NOT_VALIDATED",
+    "passed": null
     }
   ],
   "solver_cross_checks": [
@@ -460,18 +539,21 @@
       "name": "alternate_solver_or_enumeration",
       "primary": 0,
       "secondary": 0,
-      "passed": true
+      "status": "NOT_VALIDATED",
+    "passed": null
     }
   ],
   "sensitivity_analysis": {
     "method": "one_at_a_time",
     "max_relative_change": 0,
-    "passed": true
+    "status": "NOT_VALIDATED",
+    "passed": null
   },
   "invariants": [
     {
       "name": "constraints_satisfied",
-      "passed": true
+      "status": "NOT_VALIDATED",
+    "passed": null
     }
   ],
   "failure_modes": [
@@ -482,31 +564,37 @@
   ],
   "constraint_residuals": {
     "max_abs": 0,
-    "passed": true
+    "status": "NOT_VALIDATED",
+    "passed": null
   },
   "optimality_gap": {
     "value": 0,
-    "passed": true
+    "status": "NOT_VALIDATED",
+    "passed": null
   },
   "multi_start": {
     "runs": 5,
     "best_values": [0, 0, 0],
-    "passed": true
+    "status": "NOT_VALIDATED",
+    "passed": null
   },
   "random_seed_stability": {
     "seeds": [1, 2, 3],
     "std": 0,
-    "passed": true
+    "status": "NOT_VALIDATED",
+    "passed": null
   },
   "bootstrap_confidence_interval": {
     "level": 0.95,
     "lower": 0,
     "upper": 0,
-    "passed": true
+    "status": "NOT_VALIDATED",
+    "passed": null
   },
   "perturbation_stability": {
     "ranking_changed": false,
-    "passed": true
+    "status": "NOT_VALIDATED",
+    "passed": null
   }
 }
 ```

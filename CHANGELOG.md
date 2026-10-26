@@ -18,6 +18,17 @@
 
 ## Unreleased（继承自上游 1.0.0 之后的开发线）
 
+- **新增 Phase 0.5「设计闸门」**（与原版 math-modeling 同源）：`question_queue.json` 建立后、任何代码之前，生成一块覆盖**全部小问**的 `design_board.json`（每题 2+ 候选 + 推荐理由 + 真实试算），渲染 `design_board.md` / `.html` / `design_choices.xlsx`，用户改选后由**用户本人**在终端输入 4 位确认码确认。确认只做一次，之后仍按小问串行交付，每问完成即可交论文手并行写作。
+- 新增工具：`tools/design_board.py`（render / ingest / status / confirm / serve，零第三方依赖）、`tools/design_board_checker.py`、`tools/design_board_html.py`、`tools/design_board_xlsx.py`、`tools/mini_trial.py`（真实试算落盘）、`tools/migrate_workspace.py`（旧工作区补板，有队列时按题建板）、`tools/tools_sync_checker.py`（与主仓库比对工具漂移）。
+- 新增 `design_board.py serve` 本地回传服务器：只绑 `127.0.0.1`，页面注入一次性 token 并在服务端校验 `X-MM-Token`；回执走与 `ingest` 相同的校验路径；无服务器时页面自动降级为下载 JSON。
+- **分小问分支专属适配**：① 时间线校验同时扫根目录与 `questions/qN/`（否则这条防线在分支上失效）；② 交叉校验**按题**读 `questions/qN/model_selection_audit.json`，审计暂缺判 `board_audit_pending`（warning）；③ `pipeline_check --stage question` 不校验决策板（否则逐问 excellence 永久红），`--stage final` 无条件强制。
+- 新增宿主 hook `hooks/`（Claude Code JSON deny / Cursor exit 2）：未确认时拦截写 `solution.*`；`MM_GATE_BYPASS=1` 可旁路并留 warning。
+- **反伪造加固**：`judge_panel_checker` 新增最低分阈值 60 与 `chair_summary.decision` 枚举校验；`confirm_code` 必须由 `board_sha256` 派生（手写判 `confirm_code_mismatch`）；`confirmed_by="ci"` 与 `user_non_interactive` 在 excellence 下判 error；交互式 `confirm` 要求真实终端（管道喂码不再能冒充人工）；`final_solution.json` / `model_decision.md` 升为硬门。
+- 修正 `references/templates.md` 的 `validation_summary.json` 示例：`passed: true` 改为 `status: "NOT_VALIDATED"` + `passed: null`，照抄模板不再能通过 `evidence_checker` / `robustness_checker`。
+- 修正 `tools/code_runner.py`：给子进程锁定 UTF-8，避免环境设了 `PYTHONIOENCODING=utf-8` 时中文输出被按 GBK 解码导致误判失败。
+- 修正 `examples/solved-python` 的两处数值矛盾：`optimization_certificate.json` 的 `bounds` 与审计的 `oracle_value` 由 2050 改为真实最优值 2175，候选名与决策板对齐。
+- 扩充 `references/award_playbook.md` 与 `source_registry_checker.py`：40 张方法卡由 7 个必填标签扩到 11 个（追加「推荐理由 / 计算复杂度 / 实现依赖 / 对标 baseline」），两处锁定同步。
+
 - 新增 `award_readiness_checker.py` 并接入 excellence pipeline，用于硬审计 `ambiguity_register.json`、`assumption_ledger.md`、`scoring_strategy.md`、`ablation_study.json`、`decision_insights.md` 和 `defense_questions.md`，防止高风险歧义、评分策略、消融证据、决策解释或评委质询准备缺失时仍被放行。
 - 新增奖项级 excellence gate：`brief_completeness_checker.py`、`model_selection_checker.py`、`optimization_certificate_checker.py`、`uncertainty_budget_checker.py`、`validation_profile_checker.py`、`data_leakage_checker.py`、`statistical_validation_checker.py`、`source_freshness_checker.py` 和 `mini_benchmark_runner.py`，并接入 `pipeline_check.py --quality-mode excellence`、CI 与 release checklist。
 - 强化图表、合规和复现：`figure_storyboard.md` 每图必须含 `file`、`claim`、`source_data`、`x_unit`、`y_unit`、`supports_question`；`writer_prompt.md` 必须交接每图结论和提交复核清单；`compliance_record.json` 检查匿名、AI 披露、引用、页数、附件、代码提交和官方规则；`reproducibility_manifest.json` 增加 OS、求解器、随机库、耗时和输入/输出 hash。

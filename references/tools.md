@@ -1,5 +1,85 @@
 # 工具命令与判定
 
+## design_board.py
+
+```bash
+python "tools/design_board.py" render --workspace "." [--format md|html|xlsx|all]
+python "tools/design_board.py" ingest --workspace "." --from "user_submission.json"
+python "tools/design_board.py" ingest --workspace "." --from "design_choices.xlsx"
+python "tools/design_board.py" serve --workspace "." [--port 8765] [--no-browser] [--once]
+python "tools/design_board.py" status --workspace "."
+python "tools/design_board.py" confirm --workspace "."
+python "tools/design_board.py" confirm --workspace "." --apply
+python "tools/design_board.py" confirm --workspace "." --apply --skip-interactive --reason "用户要求跳过"
+```
+
+Phase 0.5 设计闸门的主工具，主流程零第三方依赖。分小问分支里它放在**工作区根目录**，
+一块板覆盖 `question_queue.json` 的**全部小问**（每题一个 entry，`id` 与队列一致）。
+
+| `--format` | 产物 | 依赖 |
+|---|---|---|
+| `md`（默认） | `design_board.md`（Mermaid 导图 + 候选对比表 + 4 位确认码） | 无 |
+| `xlsx` | `design_choices.xlsx`（7 工作表：总览/待决策/权重/打分/来源/批注/说明，含下拉、保护、条件格式） | `openpyxl` |
+| `html` | `design_board.html`（单文件离线，内联 SVG 导图，零外链） | 无 |
+| `all` | 以上全部 | 按需 |
+
+请求的格式缺模块或缺 `openpyxl` 时只跳过该格式（输出 `skipped`），不中断其余格式。
+
+**`serve`**：只监听 `127.0.0.1`；页面注入一次性 token 并在服务端校验 `X-MM-Token`（挡跨源表单伪造回执）；回执走与 `ingest` 相同的 `apply_submission()` 校验路径；页面在 file:// 下自动降级为下载 `design_board_submission.json`；`--once` 收到第一份回执即退出。
+
+**写权限红线**：`ingest` 不得写 `confirmed*` / `confirm_code` / `confirm_attested`；这些只能由 `confirm` 写。AI 不得代跑 `confirm --apply`，也不得代填确认码。`--skip-interactive` 会写 `confirmed_by: "user_non_interactive"`，checker 标 `confirm_not_attested`（standard 留痕，excellence 判不通过）。
+
+**交互式 confirm 要求真实终端**：`echo <码> | confirm --apply` 会被拒绝——否则它与真人操作完全无法区分。
+
+## design_board_checker.py
+
+```bash
+python "tools/design_board_checker.py" --workspace "." --mode excellence
+python "tools/design_board_checker.py" --workspace "." --mode excellence --no-cross-audit
+python "tools/design_board_checker.py" --workspace "." --mode excellence --skip-timeline
+python "tools/design_board_checker.py" --workspace "." --mode excellence --allow-legacy
+```
+
+校验决策板自身（结构、候选数、确认状态、`board_sha256` 一致性、`design_rounds/`、确认来源、确认码派生），并做两类外部校验：
+
+1. **时间线**：这些文件的 mtime 不得早于 `confirmed_at`（容差 5s），否则 `code_written_before_confirm`：
+   - 整题形态：根 `solution.{py,m}` / `solution_tests.*` / `results/**`
+   - **分小问形态：`questions/qN/solution.{py,m}` / `questions/qN/solution_tests.*` / `questions/qN/results/**`**
+2. **交叉校验（方案 C）**：**按题**对账——`questions/<id>/model_selection_audit.json`（找不到退回根）：
+   - 与 `final_selection.name` 不一致 → `board_audit_selection_mismatch`（error）
+   - 候选集完全对不上 → `board_audit_candidate_mismatch`（error）
+   - 审计暂不存在 → `board_audit_pending`（warning，不阻断；本分支审计在 Phase 1-Q 才产出）
+
+`--allow-legacy`：把"缺板"从 error 降为 warning（`legacy_workspace_without_board`），其它失败码严格度不变。
+
+失败码 `confirm_code_mismatch` / `confirm_ci` / `confirm_not_attested` 在 standard 只是留痕，**excellence 判 error**——这是反"AI 自证确认"的关键。
+
+## mini_trial.py
+
+```bash
+python "tools/mini_trial.py" run --workspace "." --trial "python questions/q1/solution.py --method enum" --label "q1 O1 枚举"
+python "tools/mini_trial.py" status --workspace "."
+```
+
+跑**真实试算**并落 `mini_trials.json`（测耗时、解析 stdout JSON、追加写盘）。决策板要求每个候选都有真实数值，禁止手填估计值。超时用 `Popen` + `taskkill /T` / `killpg` 回收整棵进程树。
+
+## migrate_workspace.py
+
+```bash
+python "tools/migrate_workspace.py" --workspace "."
+python "tools/migrate_workspace.py" --workspace "." --apply
+```
+
+给旧工作区补最小可用 `design_board.json` 骨架。**有 `question_queue.json` 时按题建板**（每题从 `questions/qN/model_selection_audit.json` 推断候选，`id` 与队列一致）；否则按整题形态建单题板。默认 dry-run，从不覆盖已存在的板，也从不写确认字段。
+
+## tools_sync_checker.py
+
+```bash
+python "tools/tools_sync_checker.py" --primary "<主仓库路径>" --branch "." --mode strict
+```
+
+比对主仓库与本分支的 `tools/*.py` 哈希，`--mode strict` 下未声明漂移即 exit 1。预期差异白名单：`doctor.py`、`pipeline_check.py`、`workflow_runner.py`、`question_queue.py`、`tools_sync_checker.py`。
+
 ## doctor.py
 
 ```bash

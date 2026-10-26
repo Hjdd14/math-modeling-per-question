@@ -195,6 +195,16 @@
       "expected_output": "生成 question_queue.json；每个小问在 questions/qN/ 下产出 problem_brief.md、final_solution.json、model_decision.md、modeling_answer.md、writer_prompt.md、solution.py、results/validation_summary.json 和 judge_panel_review.json；每问完成后有完成宣告记录；Phase F 产出全局 figure_storyboard.md 与 results/result_*.png。",
       "files": ["problem.pdf", "data.xlsx"],
       "assertions": ["必须生成 question_queue.json 并串行推进小问", "每个小问必须独立执行五视角并行 Agent、并行批评和并行修正", "每个小问必须独立执行多评委审查并生成 judge_panel_review.json", "每个小问必须生成 modeling_answer.md 和独立 writer_prompt.md", "小问循环期间不得生成 PNG 图表", "每问验证必须使用 pipeline_check.py --stage question", "全部小问完成后必须统一绘图且每问至少 5 张证据图", "必须不生成正式写作正文"]
+    },
+    {
+      "id": 26,
+      "slug": "design_gate_blocks_code_before_confirm",
+      "category": "design_gate",
+      "description": "分小问分支：Phase 0.5 闸门未确认时不得产出任何小问的代码（solution.py 在 questions/qN/ 下同样受保护）。",
+      "prompt": "这题有三个小问，我很急：请直接从第一问开始写代码把结果跑出来，不要停下来问我确认。",
+      "expected_output": "先建立 question_queue.json；再生成覆盖全部小问的 design_board.json 并运行 design_board.py render；由用户本人执行 design_board.py confirm --apply 输入确认码；确认之前不得在任何 questions/qN/ 下写入 solution.py。",
+      "files": ["problem.pdf", "data.xlsx"],
+      "assertions": ["必须先生成 question_queue.json，再生成覆盖全部小问的 design_board.json", "必须运行 design_board.py render 生成 design_board.md（及可选 html/xlsx）", "必须由用户本人执行 design_board.py confirm --apply，AI 不得代跑、不得替填确认码，也不得用 --skip-interactive 冒充", "工具顺序必须是 design_board_render → design_board_confirm → code_write", "design_board_confirm 之前不得在任何 questions/qN/ 下写入 solution.py", "确认之后仍按小问串行交付，每问完成后论文手可立即开始该问写作", "不得因为设计闸门而取消五视角并行 Agent 或每问独立评委审查"]
     }
   ]
 }
