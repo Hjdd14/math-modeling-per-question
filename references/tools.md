@@ -470,3 +470,52 @@ python "tools/workflow_runner.py" verify --workspace "." --language python
 该工具只做确定性文件状态编排，不替代并行 Agent 推理。`resume` 会扫描工作区产物并合并已有 `phases`、`tool_runs`、`agent_runs` 和 `issues`，不能抹掉并行 Agent 历史。
 
 `scaffold --questions q1,q2,...`（按小问分支新增）：在常规初始化之外，为每个小问创建 `questions/qN/` 迷你工作区骨架（`results/`、独立 `modeling_state.json`），并生成 `question_queue.json` 初稿（等价于随后运行 `question_queue.py init`）。不传 `--questions` 时行为与原版完全一致。
+
+---
+
+## 双闸门（v1.2.0-per-question）
+
+分小问分支把闸门拆成 A（框架/范式）与 B（方案择定），**B 每问一次**。
+
+### 命令与路径
+
+```bash
+# A 闸门：整题一块板，位于工作区根目录
+python tools/design_board.py render  --workspace "." --format all
+python tools/design_board.py confirm --workspace "." --apply
+python tools/design_board_checker.py --workspace "." --gate a --mode excellence
+
+# B 闸门：每问一块板，位于该问工作区
+python tools/design_board.py render  --gate b --workspace "questions/qN" --format all
+python tools/design_board.py serve   --gate b --workspace "questions/qN"
+python tools/design_board.py ingest  --gate b --workspace "questions/qN" --from design_choices_gate_b.xlsx
+python tools/design_board.py confirm --gate b --workspace "questions/qN" --apply
+python tools/design_board_checker.py --gate b --workspace "questions/qN" --mode excellence
+```
+
+| 产物 | `--gate a`（根目录） | `--gate b`（questions/qN） |
+|---|---|---|
+| 主数据 | `design_board.json` | `design_board_gate_b.json` |
+| 视图 | `design_board.md/.html` | `design_board_gate_b.md/.html` |
+| 选择表 | `design_choices.xlsx` | `design_choices_gate_b.xlsx` |
+| 回执 | `design_rounds/` | `design_rounds_gate_b/` |
+
+### checker 分组
+
+- **A 组**：`paradigm_set` 3–5 项 + 异质族 + `paradigm_selection`（≥2 项、≥2 族）；`user_locked` 必须 false（schema v2）；`options` 允许为空；只报 `paradigm_audit_pending`（warning），不拿未产出的审计对账。
+- **B 组**：`advice_*`（候选 5–8、恰好 1 recommended、分数/维度分、pros/cons、why_not+when_better、data_comparison ≥2 slice × 全候选、trials_ref 可回溯、数值一致、`is_judge_panel:false`）；`trials_*`（工具执行、覆盖、可比键一致）；`user_choice_present` / `invalid_user_choice` / `preauthorized_not_attested`；B 板↔`questions/qN/model_selection_audit.json` 按题对账。
+- **双时间线**：A 比 A 板 `confirmed_at`（`code_written_before_gate_a`，旧板仍报 `code_written_before_confirm`）；B 比该问 B 板（`code_written_before_gate_b`）。`perspective_trials/**` 不计入。**板缺失 + 有交付代码 = error（strict/excellence）**。
+
+### 新增工具
+
+- `tools/perspective_trial_runner.py`：`open / run / status / verify`。B 闸门**唯一**试算写入口，记录 `executed_by: "tool"`、`exit_code`、`runtime_s`、`stdout_sha256`、`script_sha256`、`captured_at`；`verify` 标出脚本改过但没重跑的 `stale` run。
+- `tools/model_advice_builder.py`：`assemble`（数值由工具从 trials 回填）与 `validate`（8 条硬规则 + 数值一致性；standard 下三条结构类判 warning）。
+
+### pipeline_check
+
+```bash
+python tools/pipeline_check.py --workspace "questions/qN" --stage question --board-root "."
+python tools/pipeline_check.py --workspace "." --stage final --quality-mode excellence
+```
+
+`--board-root` 从小问工作区向上解析根 A 板；`--stage final` 会逐问跑 `design_board_checker --gate b`。A 板 schema v2 缺 B 板 → error；legacy 缺 B 板 → warning。

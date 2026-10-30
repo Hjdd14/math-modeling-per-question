@@ -1,6 +1,6 @@
 [project]
 name = "math-modeling-per-question-skill"
-version = "1.1.0"
+version = "1.2.0"
 description = "Branch of the math modeling competition skill that delivers each sub-question separately (modeling answer, code, output data, writer prompt) with full per-question Agent gates, verification and judge review, deferring all figures to a unified Phase F."
 readme = "README.md"
 requires-python = ">=3.10"

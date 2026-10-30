@@ -42,9 +42,11 @@ description: 用于数学建模竞赛或类似多阶段建模任务，并且需�
 14. 奖项级交付必须使用题意完成度、模型选择审计、优化证书、不确定性预算、题型 profile、数据泄漏、统计验证、模型规范、数据契约、自动测试、数值鲁棒性、图表语义证据、多评委并行审查、创新筛选、合规复现和写作交接闭环；每个小问在其工作区运行 `pipeline_check.py --stage question --quality-mode excellence`，整题交付前在根工作区运行 `--stage final --quality-mode excellence`。
 15. 每个小问的 `model_spec.json`、`model_selection_audit.json`、`validation_profile.json`、`symbol_table.json`、`solver_strategy.json`、`innovation_register.json` 和 `writer_prompt.md` 是该问模型、代码、验证器和后续写作之间的对齐基准。
 16. 小问之间允许单向依赖：后求解的小问可以读取已宣告完成小问的 `final_solution.json` 与 `results/` 作为输入，但不得修改已完成小问的任何产物。
-17. **Phase 0.5 是本分支的硬性闸门**：`question_queue.json` 建立后、进入小问循环之前，必须先产出一块覆盖全部小问的 `design_board.json` 并渲染视图，由用户确认；**确认之前不允许写任何代码**（包括 `questions/qN/solution.py`）。
-18. `design_board.py confirm --apply` 必须由用户本人在真实终端执行并输入 4 位确认码；AI 不得代跑、不得代填，也不得用 `--skip-interactive` 冒充人工确认（那会留 `confirm_not_attested` 痕迹，excellence 判不通过）。
-19. 若某问在 Phase 1-Q 发现板里的候选不成立，**必须重开闸门**（改板 → 重新 render → 重新收敛 → 用户重新确认）后才能继续写该问代码；不允许改板后直接写代码。
+17. **Phase 0.5 是框架闸门（A 闸门）**：`question_queue.json` 建立后、进入小问循环之前，必须先产出一块覆盖全部小问的 `design_board.json`（schema v2：每问 3–5 个 `paradigm_set` + `paradigm_selection`，至少 1 个异质族）并渲染，由用户确认；**确认之前不允许写任何代码**（包括 `questions/qN/solution.py`）。A 板**不锁定模型选型**。
+17b. **Phase 1.5-Q 是方案择定闸门（B 闸门，每问一次）**：每个小问在 Phase 1-Q 五视角与真实试算之后，必须产出该问 `questions/qN/model_advice.json`、`questions/qN/perspective_trials.json` 与 `questions/qN/design_board_gate_b.json`，由用户在该问 B 板上选定模型并 `confirm`；**B 板确认前不得进入 Phase 2-Q/3-Q，不得写该问 `solution.py` / `solution.m` / `solution_tests.*`**。
+18. `design_board.py confirm --apply`（A 板一次、每问 B 板各一次）必须由用户本人在真实终端执行并输入该板 4 位确认码；AI 不得代跑、不得代填，也不得用 `--skip-interactive` 冒充人工确认（那会留 `confirm_not_attested` 痕迹，excellence 判不通过）。
+19. 若某问在 Phase 1-Q 发现 **A 板范式集合本身不成立** → 走 `reopen_gate_request.json`（`gate: "a"`）重开 A 闸门；若用户在 B 板选定的方案不可行 → 走 `reopen_gate_request.json`（`gate: "b"`）重开该问 B 闸门。**不允许改板后直接写代码，也不允许 AI 自行换方案。**
+20. `problem_brief.md`（根与每问）**不得**出现"已锁定选型 / 不得更换 / user_locked=true / 主模型已由…闸门"这类措辞；模型选择只能由该问 B 板的 `user_choice` 决定。
 
 ## 固定产物
 
@@ -64,10 +66,10 @@ description: 用于数学建模竞赛或类似多阶段建模任务，并且需�
 | `modeling_state.json` | 全程 | 机器可读状态（整题进度） |
 | `modeling_memory.md` | 全程 | 人类可读过程记忆（整题进度） |
 | `case_retrieval.json` | Phase 1 | 全局相似题型检索（各小问检索的公共参考，可选） |
-| `design_board.json` | **Phase 0.5** | 决策板主数据：一块板覆盖全部小问，每题 2+ 候选 + 推荐理由 + 真实试算 + 用户选择 + 确认状态（**唯一真实来源**） |
-| `design_rounds/round_NNN.json` | **Phase 0.5** | 每轮回执：用户改了什么、回传来源与 nonce |
-| `design_board.md` / `.html` / `design_choices.xlsx` | **Phase 0.5** | 决策板渲染视图（Mermaid/SVG 导图 + 对比表 + 4 位确认码）；由 `render` 生成，可重新生成 |
-| `mini_trials.json` | **Phase 0.5** | 每个候选在小样本上的真实试算结果与复跑命令（禁止手填估计值） |
+| `design_board.json` | **Phase 0.5** | **A 板**：一块板覆盖全部小问，每题 `paradigm_set` + `paradigm_selection`（schema v2，不锁定模型） |
+| `design_rounds/round_NNN.json` | **Phase 0.5** | A 板每轮回执：用户改了什么、回传来源与 nonce |
+| `design_board.md` / `.html` / `design_choices.xlsx` | **Phase 0.5** | A 板渲染视图（导图 + 范式表 + 4 位确认码） |
+| `mini_trials.json` | **Phase 0.5** | 可选：A 阶段小样本试算；B 闸门改用每问的 `perspective_trials.json` |
 
 ### 每问产物（`questions/qN/`，每个小问一份）
 
@@ -88,7 +90,14 @@ description: 用于数学建模竞赛或类似多阶段建模任务，并且需�
 | `questions/qN/ablation_study.json` | Phase 1-Q/3-Q | baseline、简化模型、完整模型和消融实验 |
 | `questions/qN/innovation_register.json` | Phase 1-Q | 创新点、题目痛点、baseline 增益、证据和风险 |
 | `questions/qN/final_solution.json` | Phase 1-Q | 该问最终建模方案 |
-| `questions/qN/model_decision.md` | Phase 1-Q | 共识过程和裁决理由 |
+| `questions/qN/model_decision.md` | Phase 1-Q | 共识过程和裁决理由（记录用户选择与建议推荐的差异） |
+| `questions/qN/design_board_gate_b.json` | **Phase 1.5-Q** | **B 板**：该问候选分数/优缺点/数据对比/用户选择/确认状态 |
+| `questions/qN/design_rounds_gate_b/round_NNN.json` | **Phase 1.5-Q** | B 板回执 |
+| `questions/qN/design_board_gate_b.md/.html` / `design_choices_gate_b.xlsx` | **Phase 1.5-Q** | B 板渲染视图（含 4 位确认码） |
+| `questions/qN/model_advice.json` | **Phase 1.5-Q** | 建议 Agent 产出：1 建议 + 其余不建议 + 打分 + 多组数据对比 |
+| `questions/qN/perspective_trials.json` | **Phase 1.5-Q** | 每视角真实试算（只能由 `tools/perspective_trial_runner.py` 写入） |
+| `questions/qN/perspective_trials/*.py` | **Phase 1.5-Q** | 每视角试算脚本（试算代码，不是交付代码） |
+| `questions/qN/reopen_gate_request.json` | Phase 1.5-Q+ | 重开闸门申请（范式不成立或所选方案不可行），可选 |
 | `questions/qN/modeling_answer.md` | Phase 3-Q 后 | 该小问建模解答文档（问题分析、假设、符号、模型建立、求解、结果、检验、结论） |
 | `questions/qN/writer_prompt.md` | Phase 2-Q/4-Q | 该小问写作交接提示词（Phase 2-Q 草稿 + Phase 4-Q 后定稿） |
 | `questions/qN/solution.py` 或 `solution.m` | Phase 3-Q | 可运行代码 |
@@ -164,18 +173,18 @@ python "tools/pipeline_check.py" --workspace "." --language python --stage final
 
 确认后**额外执行一步**：根据 `scoring_strategy.md` 的小问清单，用 `--questions` 或 `tools/question_queue.py init` 建立 `question_queue.json`（含小问依赖关系），与用户确认求解顺序，然后更新 `modeling_state.json` 与 `modeling_memory.md`。
 
-### Phase 0.5: 设计闸门（整题一次，代码编写前）
+### Phase 0.5: 框架与探索边界闸门（A 闸门，整题一次，代码编写前）
 
-`question_queue.json` 建立并确认后进入本阶段。目标是让用户在写任何代码前看到**全部小问**的候选算法对比、推荐理由与真实试算，并亲自确认。本阶段与主仓库 math-modeling 的 Phase 0.5 完全同源，差别只有一处：**一块板覆盖全部小问**（每题一个 entry，`id` 与队列一致）。
+`question_queue.json` 建立并确认后进入本阶段。目标是让用户在写任何代码前确认：**题目读对了吗、高危假设接不接受、每个小问要探索哪些方法范式**，并亲自确认。本阶段与主仓库 Phase 0.5 同源，差别只有一处：**一块板覆盖全部小问**（每题一个 entry，`id` 与队列一致）。**本阶段不选模型**——选模型在每个小问的 Phase 1.5-Q。
 
-1. 为每个小问产 2+ 个候选算法：每个候选必须带 `rationale`、`source_ref`（方法卡出处，含 tier 与 verified）、`complexity`、`dependencies`、`risk`、`mini_trial`。
-2. 候选必须有**真实试算数值**：`python "tools/mini_trial.py" run --workspace "." --trial "<复跑命令>" --label "<候选名>"` 实跑一遍并落 `mini_trials.json`；禁止手填估计值。
-3. 运行 `python "tools/design_board.py" render --workspace "." --format all` 生成 `design_board.md` / `.html` / `design_choices.xlsx`（含导图、对比表、4 位确认码）。
-4. 交给用户改（改选择、写批注）。三条通道任选其一，语义等价：页面直选（`design_board.py serve`）/ Excel（`ingest --from design_choices.xlsx`）/ 下载 JSON（`ingest --from design_board_submission.json`）。
+1. 为每个小问产 **3–5 个 `paradigm_set`**：每项带 `paradigm_id`、`name`、`family`（方法族）、`source_ref`（含 tier 与 verified）、`why_explore`、`explore_cost`；同一问内至少 1 个范式与其他范式**异质**（`family` 不同）。
+2. 每题写 `paradigm_selection`（≥2 项、覆盖 ≥2 个族）、`options: []`、`user_choice: null`、`user_locked: false`。`mini_trial` 在本阶段可选。
+3. 运行 `python "tools/design_board.py" render --workspace "." --format all`（默认 `--gate a`）生成 `design_board.md` / `.html` / `design_choices.xlsx`（含导图、范式表、4 位确认码）。
+4. 交给用户改（增删范式、调整要探索的集合、写批注）。三条通道任选其一，语义等价：页面直选（`serve`）/ Excel（`ingest --from design_choices.xlsx`）/ 下载 JSON（`ingest --from design_board_submission.json`）。
 5. 重复至连续 2 轮无修改、无待决项、`board_sha256` 与内容一致。
 6. **由用户本人**运行 `python "tools/design_board.py" confirm --workspace "." --apply` 并输入 4 位确认码。AI 不得代跑。
-7. 运行 `python "tools/design_board_checker.py" --workspace "." --mode excellence` 验证板与时间线。
-8. 确认通过后才允许进入小问循环；每个小问的 Phase 1-Q 必须 honoring 板里该问的 `user_locked` 选择。
+7. 运行 `python "tools/design_board_checker.py" --workspace "." --gate a --mode excellence` 验证范式集合、异质性与时间线。
+8. 确认通过后才允许进入小问循环。五视角以该问 `paradigm_selection` 为**探索边界**，不得被任何预设选型锁定；范式本身不成立时走 `reopen_gate_request.json`（`gate: "a"`）。
 
 > 确认只做**一次**、且在所有小问的代码之前——这正是本分支"逐问交付 + 论文手并行写作"能成立的前提：闸门开一次，之后每问完成即可交论文手，不再二次阻塞。
 > 若某问在 Phase 1-Q 发现候选不成立：改板 → 重新 render → 重新收敛 → **用户重新确认**（确认码会变），之后才能继续写代码。
@@ -186,7 +195,9 @@ python "tools/pipeline_check.py" --workspace "." --language python --stage final
 
 #### Phase 1-Q: 该问并行建模共识
 
-本问的建模必须 honoring Phase 0.5 板里该问 `user_locked: true` 的选择，不得推翻——要换模型必须先重开闸门。
+本问的建模以 A 板里该问的 `paradigm_selection` 为**探索边界**：五视角各自在边界内独立提出最优方案，**不得被任何预设选型锁定**（A 板不承载模型选择）；若认为范式集合本身不成立，走 `reopen_gate_request.json`（`gate: "a"`）。
+
+> **禁止**把"主模型已锁定 / user_locked=true / 不得更换"写进 `questions/qN/problem_brief.md`：`brief_completeness_checker.py` 会扫这类字样并判 `brief_contains_locked_selection`。选型只能由本问 Phase 1.5-Q 的 `user_choice` 决定。
 
 为该问写入 `questions/qN/problem_brief.md`（全局上下文摘要 + 该问目标）与 `problem_taxonomy.json`，再由该问资料库检索 Agent 读取 `competition_sources.json` 和 `award_playbook.md` 输出该问 `case_retrieval.json`。五个视角 Agent 并行生成方案（硬性 gate），按题型最多追加 3 个动态专家 Agent，随后并行批评、并行修正，创新筛选 Agent 生成该问 `innovation_register.json`，最后由裁决 Agent 生成该问 `baseline_solution.json`、`model_spec.json`、`solver_strategy.json`、`ablation_study.json`、`final_solution.json` 与 `model_decision.md`。本阶段不生成正式写作正文。有依赖的小问可读取已完成小问的 `final_solution.json` 与 `results/` 作为输入。
 
@@ -198,7 +209,26 @@ python "tools/pipeline_check.py" --workspace "." --language python --stage final
 - 工程实践 Agent
 - 创新方法 Agent
 
+#### Phase 1.5-Q: 该问方案择定闸门（B 闸门）
+
+Phase 1-Q 的五视角并行、批评与修正完成后进入本阶段。**每问一块 B 板、逐问确认**；本阶段只回答：这一问用哪个模型。
+
+1. 每视角产出可跑试算脚本 `questions/qN/perspective_trials/<perspective>.py`（stdout 打印一个 JSON 对象作为 metrics）。
+2. 用 `python "tools/perspective_trial_runner.py" open/run --workspace "questions/qN" --slices slices.json ...` 真跑 **≥2 组数据切片**（无数据集的小问用 `--axis parameter|scenario`）。**禁止手填**：`perspective_trials.json` 只能由 runner 写入（`executed_by: "tool"` + `exit_code` + `stdout_sha256`）。
+3. 建议 Agent 写 `questions/qN/model_advice.json`：恰好 1 个 `recommended` + 其余 `not_recommended`；候选 5–8；每个候选 `pros`/`cons` 各 ≥2；不推荐项 `why_not` ≥2 + `when_better`；`data_comparison` ≥2 slice × 全候选且数值回溯到 trials；`is_judge_panel: false`。
+4. `python "tools/model_advice_builder.py" assemble --workspace "questions/qN"` 生成骨架 → Agent 只填判断字段 → `validate --workspace "questions/qN" --mode excellence` 必须 `passed: true`。
+5. `python "tools/design_board.py" render --gate b --workspace "questions/qN" --format all` 生成该问 `design_board_gate_b.md/.html` 与 `design_choices_gate_b.xlsx`。
+6. 用户用同一套通道选定该问模型（serve / Excel / JSON），`ingest --gate b` 写 `questions/qN/design_rounds_gate_b/`。
+7. **由用户本人**运行 `python "tools/design_board.py" confirm --gate b --workspace "questions/qN" --apply` 并输入该问 B 板确认码。
+8. `python "tools/design_board_checker.py" --gate b --workspace "questions/qN" --mode excellence`：校验建议 8 条规则、trials 工具执行与数值一致、`user_choice`、双时间线（该问 `solution.*` 不得早于 B 板确认）。
+9. 裁决 Agent 读该问 B 板 `user_choice`，**无条件采用用户所选方案**，产出该问 `model_selection_audit.json`（`selected_by: "user"`、`user_choice_id`、`advice_recommended_id`、`diverged_from_advice`）与 `model_spec.json`、`solver_strategy.json`、`optimization_certificate.json`、`uncertainty_budget.json`、`validation_profile.json`、`ablation_study.json`、`innovation_register.json`、`final_solution.json`、`model_decision.md`。
+10. 所选方案不可行 → 产出 `questions/qN/reopen_gate_request.json`（`gate: "b"`）并停下等用户重新确认；**不得自行换方案，也不得绕过 B 板写码**。
+
+> 每问一次 B 闸门是本分支的刻意取舍：论文手可以并行写作，但**每个小问的模型都必须由人拍板**。B 板的打分不是评委结论（评委审查在 Phase 4-Q，`is_judge_panel` 硬约束为 false）。
+
 #### Phase 2-Q/3-Q: 该问写作交接文档 Agent 与代码 Agent 并行
+
+> **前置条件**：该问 B 板已确认（`questions/qN/design_board_gate_b.json` 的 `confirmed: true` 且 `user_choice` 非空）。未确认前不得写该问 `solution.*`；hook 守卫与 checker 会同时拦。
 
 文档 Agent 只生成该问 `questions/qN/writer_prompt.md` 草稿，不生成正式写作正文。代码 Agent 先生成 `solution_tests.py` 或 `solution_tests.m`，再生成 `solution.py` 或 `solution.m`，并把该问所有结果和 `results/validation_summary.json` 写入 `questions/qN/results/`。**该阶段只产数据，不绘制任何 PNG 图表。**
 
@@ -210,7 +240,7 @@ python "tools/pipeline_check.py" --workspace "." --language python --stage final
 
 先并行启动技术审查组（语法、逻辑、输出审查 Agent），同时启动独立复现 Agent（只读该问 `problem_brief.md`、`baseline_solution.json`、`final_solution.json` 和代码输出）。再启动五评委并行审查：国赛建模评委、美赛评委、代码复现评委、图表证据评委（该轮只审数据可图性与图表叙事规划，正式图表在 Phase F 复审）、工程/业务解释评委；chair judge 汇总为该问 `judge_panel_review.json`。然后启动结果解释与决策建议 Agent、评委质询 Agent，输出该问 `decision_insights.md` 与 `defense_questions.md`，并把 `writer_prompt.md` 定稿补入审查与验证摘要。
 
-汇总问题后运行 `pipeline_check.py --workspace "questions/qN" --stage question`（标准 → `--evidence-mode strict` → 奖项级 `--quality-mode excellence` 逐级），任何失败都必须修正并重新验证。任一 high severity 未解决，必须回溯修正，不得宣告完成。
+汇总问题后运行 `pipeline_check.py --workspace "questions/qN" --stage question --board-root "."`（标准 → `--evidence-mode strict` → 奖项级 `--quality-mode excellence` 逐级），任何失败都必须修正并重新验证。`--board-root` 用于从根工作区解析 A 板。任一 high severity 未解决，必须回溯修正，不得宣告完成。
 
 #### 完成宣告（硬性 gate）
 

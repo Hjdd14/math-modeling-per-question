@@ -66,10 +66,11 @@ python "tools/workflow_runner.py" scaffold --workspace "." --language python --q
 - 哪些地方适合突出模型创新。
 - 哪些要求属于格式、精度、匿名性、AI 使用披露或解释性扣分点。
 
-## Phase 0.5: 设计闸门（整题一次，代码编写前）
+## Phase 0.5: 框架与探索边界闸门（A 闸门，整题一次，代码编写前）
 
-Phase 0 建好 `question_queue.json` 后进入本阶段。与主仓库 math-modeling 的 Phase 0.5 同源，唯一差别是
+Phase 0 建好 `question_queue.json` 后进入本阶段。与主仓库 Phase 0.5 同源，差别只有一处：
 **一块板覆盖全部小问**（每题一个 entry，`id` 与队列的 `id` 严格一致）。
+**本阶段只确认框架与待探索范式，不锁定模型**——模型在每个小问的 Phase 1.5-Q 由用户在 B 板上选定。
 
 ### 0.5.1 三条硬性规则
 
@@ -77,29 +78,38 @@ Phase 0 建好 `question_queue.json` 后进入本阶段。与主仓库 math-mode
 2. **用户通道才写回执**：用户改的选择/批注只能通过 `serve` 页面、`design_choices.xlsx` 或下载 JSON 回传，再由 `ingest` 写入 `design_rounds/`；
 3. **只有 `confirm` 能写确认**：`confirmed` / `confirmed_at` / `confirmed_by` / `confirm_code` / `confirm_attested` 只由 `design_board.py confirm --apply` 写入，且必须由**用户本人**在真实终端敲 4 位确认码。
 
-### 0.5.2 design_board.json（分小问形态）
+### 0.5.2 design_board.json（A 板，schema v2）
 
-一块板、`questions[]` 覆盖全部小问，字段与主仓库 §4.2 相同，只强调三点：
+一块板、`questions[]` 覆盖全部小问，每题给**待探索范式集合**：
 
 ```json
 {
+  "schema_version": 2, "gate": "a",
   "questions": [
-    {"id": "q1", "goal": "q1 的目标", "options": [{"id": "O1", "name": "候选A", "...": "..."}, {"id": "O2", "name": "候选B"}],
-     "user_choice": "O1", "user_locked": true, "confirmed": true},
-    {"id": "q2", "goal": "q2 的目标", "options": ["..."], "user_choice": "O1", "user_locked": true, "confirmed": true}
+    {"id": "q1", "goal": "q1 的目标",
+     "paradigm_set": [
+       {"paradigm_id": "P1", "name": "配对差 t 检验族", "family": "statistical_inference",
+        "source_ref": {"type": "method_card", "ref": "STA-03", "tier": "tier_a", "verified": true},
+        "why_explore": "...", "explore_cost": {"level": "medium", "note": "..."}},
+       {"paradigm_id": "P2", "name": "非参数秩检验族", "family": "statistical_inference", "...": "..."},
+       {"paradigm_id": "P3", "name": "守恒/流入流出机理模型", "family": "mechanistic", "...": "..."}
+     ],
+     "paradigm_selection": ["P1", "P3"],
+     "options": [], "user_choice": null, "user_locked": false, "confirmed": true}
   ]
 }
 ```
 
-- `questions[].id` 必须与 `question_queue.json` 的 `id` 一一对应（防止板与实际交付漂移）；
-- 每问至少 2 个候选；每个候选必须有 `rationale` / `risk` / `source_ref` / `mini_trial`；
+- `questions[].id` 必须与 `question_queue.json` 的 `id` 一一对应；
+- 每问 `paradigm_set` 3–5 项、至少 1 个异质 `family`；`paradigm_selection` ≥2 且覆盖 ≥2 个族；
+- `options` 允许为空、`user_choice` 允许 null、`user_locked` 必须 false；`mini_trial` 改为可选；
 - `board_sha256` 与 `confirm_code` 只能由 `render` 写。
 
 ### 0.5.3 收敛判据（5 条，全部满足才允许确认）
 
 1. `no_change_rounds >= 2`；
 2. 最后一轮 `design_rounds/*.json` 的 `user_edited == false`；
-3. 每题都有 `user_choice`；
+3. 每题都有 `paradigm_selection`（B 板则是每题都有 `user_choice`）；
 4. `pending_decisions` 为空；
 5. `board_sha256` 与当前内容一致。
 
@@ -130,13 +140,17 @@ python "tools/design_board.py" confirm --workspace "." --apply
 questions/qN/solution.{py,m} / questions/qN/solution_tests.* / questions/qN/results/**
 ```
 
-**分小问形态必须扫 `questions/qN/`**，否则这条防线在本分支上完全失效。违者判 `code_written_before_confirm`。夹具目录（`tests/test_data`、`examples/solved-python`、`examples/design-board-sample`）自动豁免。
+**分小问形态必须扫 `questions/qN/`**，否则这条防线在本分支上完全失效。
+
+**双时间线**：`--gate a` 比 A 板 `confirmed_at`（`code_written_before_gate_a`；旧板 schema<2 仍报 `code_written_before_confirm`）；`--gate b --workspace questions/qN` 比该问 B 板 `confirmed_at`（`code_written_before_gate_b`）。`questions/qN/perspective_trials/**` 是试算代码，**永不计入**。**板缺失 + 已有交付代码 = error**，不得 skipped。夹具目录（`tests/test_data`、`examples/solved-python`、`examples/design-board-sample`）自动豁免。
 
 ### 0.5.6 交叉校验（板与每问的模型选择审计对账）
 
-板里每个小问去找它的审计并对账：
+**A 板（schema v2）不做候选对账**：它只确认范式边界，此时各问审计还没产出，拿它来对账必然是假阴性——A 组只报 `paradigm_audit_pending`（warning）。旧板（schema<2）仍按下面四条逐题对账。
 
-1. `questions/<id>/model_selection_audit.json`（分小问形态），找不到退回根 `model_selection_audit.json`（整题形态）；
+**B 组（每问一块 B 板）**：
+
+1. 板里每个小问去找它的审计：`questions/<id>/model_selection_audit.json`（分小问形态），找不到退回根 `model_selection_audit.json`（整题形态）；
 2. `user_choice` 对应的候选名必须能匹配审计的 `final_selection.name` → 否则 `board_audit_selection_mismatch`（error）；
 3. 板的候选名与审计的 `candidates[].name` 至少有一对能归一化匹配 → 否则 `board_audit_candidate_mismatch`（error）；
 4. **审计暂不存在**时判 `board_audit_pending`（warning，不阻断）——因为本分支的审计在 Phase 1-Q 才产出，而闸门确认在此之前；审计的存在性由 `model_selection_checker` 在 excellence 下兜住。
@@ -153,13 +167,19 @@ questions/qN/solution.{py,m} / questions/qN/solution_tests.* / questions/qN/resu
 
 ### 0.5.8 重开闸门（改板后必须重新确认）
 
-若某问在 Phase 1-Q 发现板里的候选不成立：
+**0.5.8a 重开 A 闸门（范式本身不成立）**
 
-1. 改 `design_board.json` 里该问的 options；
-2. `render --format all` 重新生成 → `board_sha256` 与 `confirm_code` 都会变；
+1. 改 `design_board.json` 里该问的 `paradigm_set` / `paradigm_selection`；
+2. `render --format all`（默认 gate a）→ `board_sha256` 与 `confirm_code` 都会变；
 3. 重新走 ingest → 连续 2 轮无修改；
 4. **用户本人**重新 `confirm --apply` 输入新确认码；
-5. 之后才能继续写该问代码。
+5. 之后才能继续该问的 Phase 1-Q。
+
+**0.5.8b 重开 B 闸门（用户所选方案不可行）**
+
+1. 产出 `questions/qN/reopen_gate_request.json`（`gate: "b"`、`blocking_reason`、`evidence`、`proposed_alternatives`）；
+2. **停下**等用户决定：改该问 B 板 → `render --gate b --workspace questions/qN` → 重新 ingest → 重新 confirm；
+3. AI 不得自行换方案，也不得绕过 B 板直接写该问代码。
 
 ### 0.5.9 旧工作区迁移
 
@@ -170,9 +190,13 @@ python "tools/migrate_workspace.py" --workspace "." --apply  # 落地骨架
 
 有 `question_queue.json` 时按题建板（每题从 `questions/qN/model_selection_audit.json` 推断候选）；没有则按整题形态建单题板。骨架里 `source_ref.verified=false` 且带 `unverified_reason`，**不写任何确认字段**——用户必须自己重新走 render → confirm。过渡期可用 `design_board_checker --allow-legacy` 把"缺板"降为 warning。
 
-### 0.5.10 为什么只确认一次
+### 0.5.10 为什么是"A 一次 + B 每问一次"
 
-本分支的价值是"每问完成即可交论文手并行写作"。若每问都要确认一次，用户会被打断 N 次，且与"代码编写前流程保持一致"的要求不符。整题一次的代价是 AI 必须在深挖建模前就列出全部小问的候选——这可以从 `problem_brief.md` + `award_playbook.md` 方法卡做到。闸门开一次之后，逐问交付不再受二次阻塞。
+本分支的价值是"每问完成即可交论文手并行写作"。A 闸门整题只开一次：题意框架与范式边界是**全局**的，确认一次之后，逐问交付不再受二次阻塞。
+
+B 闸门按问开：模型选择是**逐问**的，而且只有 Phase 1-Q 五视角跑完、真实试算落盘之后才有做决定的证据。代价是每问一次打断与约 +50~100% 的 Phase 1 时长；换回来的是"每个小问的模型都由人拍板，且基于工具实跑的多组数据"。
+
+想减少打断可用批量复核：`design_board.py serve --gate b --queue questions/`（按队列顺序连续呈现各问 B 板）。`preauthorized: true`（无异议时按建议执行）只作留痕，`excellence` 下判 `preauthorized_not_attested`（error）。
 
 ## 小问循环总规则
 
@@ -380,6 +404,66 @@ python "tools/question_queue.py" next --workspace "."
   }
 }
 ```
+
+## Phase 1.5-Q: 该问方案择定闸门（B 闸门，每问一次）
+
+Phase 1-Q 的五视角并行、批评、修正完成后进入本阶段。**每问一块 B 板、逐问确认**，字段与主仓库同构，只差粒度。本阶段只回答：这一问用哪个模型。
+
+### 1.5-Q.1 建议 Agent（1 建议 + 其余不建议）
+
+**输入**：该问 `agent_outputs/initial_*.json` / `revised_*.json` / `critique_*.json`、`baseline_solution.json`、`case_retrieval.json`、`problem_taxonomy.json`、`innovation_register.json`、**`perspective_trials.json`（唯一数值来源）**。
+
+**输出**：**`questions/qN/model_advice.json`**。
+
+8 条硬规则（与主仓库逐字一致，issue code 相同）：
+
+1. `advice_one_recommended`：恰好 1 个 `verdict: "recommended"`，其余 `not_recommended`，`recommended_option_id` 与之一致；
+2. `advice_candidates_count`：候选 5–8（baseline 只作参照行）；
+3. `advice_scores_complete`：全部候选 0–100 分，维度分键与 rubric 一致；
+4. `advice_pros_cons`：每项 `pros`/`cons` 各 ≥2；
+5. `advice_why_not_when_better`：不推荐项 `why_not` ≥2 + `when_better` 非空；
+6. `advice_data_comparison`：≥2 slice × 全部候选；`comparable` 跨候选同键；
+7. `advice_trials_ref_valid` + `advice_number_mismatch`：每格能按 `(option_id, slice_id)` 回溯到 trials 且数值一致（1e-9）；
+8. `advice_is_not_judge_panel` + `advice_no_judge_wording`：`is_judge_panel: false` + `disclaimer`，不得出现评委结论措辞。
+
+建议 Agent 不得替用户选择：`user_choice` 只能由 `ingest` 写入。
+
+### 1.5-Q.2 每视角真实试算
+
+```bash
+python "tools/perspective_trial_runner.py" open --workspace "questions/qN" --slices slices.json
+python "tools/perspective_trial_runner.py" run  --workspace "questions/qN" --perspective statistician --option-id O1 --slice full
+python "tools/perspective_trial_runner.py" status --workspace "questions/qN"
+python "tools/perspective_trial_runner.py" verify --workspace "questions/qN"
+```
+
+- 每视角一个 `questions/qN/perspective_trials/<perspective>.py`，stdout 打印一个 JSON 对象作为 metrics；
+- **唯一写入口是 runner**：记录 `executed_by: "tool"` + `exit_code` + `stdout_sha256` + `script_sha256`；手填判 `trials_not_tool_executed`；
+- slices ≥2；无数据集的小问用 `--axis parameter|scenario` 并写 `slice_axis_note`。
+
+### 1.5-Q.3 B 板与确认
+
+```bash
+python "tools/model_advice_builder.py" assemble --workspace "questions/qN"
+python "tools/model_advice_builder.py" validate --workspace "questions/qN" --mode excellence
+python "tools/design_board.py" render  --gate b --workspace "questions/qN" --format all
+python "tools/design_board.py" serve   --gate b --workspace "questions/qN"
+python "tools/design_board.py" ingest  --gate b --workspace "questions/qN" --from design_choices_gate_b.xlsx
+python "tools/design_board.py" confirm --gate b --workspace "questions/qN" --apply
+python "tools/design_board_checker.py" --gate b --workspace "questions/qN" --mode excellence
+```
+
+B 板放在该问工作区：`questions/qN/design_board_gate_b.json`，回执 `questions/qN/design_rounds_gate_b/`，选择表 `questions/qN/design_choices_gate_b.xlsx`。确认码由该板 `board_sha256` 派生；改板必须重新 render + 重新 confirm。
+
+### 1.5-Q.4 裁决 Agent（B 板确认之后）
+
+1. 读 `questions/qN/model_advice.json` + 该问 B 板 `user_choice`（`user_locked: true`）；
+2. **无条件采用用户选择**：`model_selection_audit.json` 写 `selected_by: "user"`、`user_choice_id`、`advice_recommended_id`、`diverged_from_advice`；
+3. `model_decision.md` 记录：用户选了什么、建议 Agent 原本推荐什么、不一致时为何按用户选择执行；
+4. 产出该问全部 Phase 1-Q 规范产物（`model_spec.json`、`solver_strategy.json`、`optimization_certificate.json`、`uncertainty_budget.json`、`validation_profile.json`、`ablation_study.json`、`innovation_register.json`、`final_solution.json`、`model_decision.md`）；
+5. 方案不可行 → `questions/qN/reopen_gate_request.json`（`gate: "b"`）并停下，不得自行换方案。
+
+> 每问一次 B 闸门是本分支的刻意取舍：论文手可以并行写作，但每个小问的模型都必须由人拍板。打分不是评委结论（评委审查在 Phase 4-Q）。
 
 ## Phase 2-Q: 该问写作交接文档 Agent
 

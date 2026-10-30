@@ -1,5 +1,9 @@
 # 数学建模 Skill「建模决策闸门」综合改进方案
 
+> **⚠️ 本文 §0–§21 描述的是 v1「单闸门」实现（Phase 0.5 一次确认，候选模型同时锁定）。**
+> **1.2.0-per-question 起升级为「双闸门」：A 框架/范式闸门（整题一次）+ B 方案择定闸门（每问一次），权威规格见文末 [§22 双闸门改造](#22-双闸门改造1200-per-question)。**
+> 冲突时以 §22 与 `SKILL.md` / `references/workflow.md` 为准。
+
 > 状态：**规划稿（未实施）**。本文件只做设计与计划，不改动任何既有代码、模板、测试或产物契约。
 > 编写依据：对本仓库 `SKILL.md` / `references/` / `tools/` / `tests/` / `examples/` 的实际通读与探针实测，以及两个兄弟 skill（`math-modeling-per-question`、`math-modeling-orchestrator`）的对照。
 > 目标：把"AI 直接黑箱做完"改成"先给用户看建模思路与候选算法、用户改完确认、再落地代码"，并且**让这个闸门在代码层面可校验、难以被静默跳过**。
@@ -2021,3 +2025,56 @@ Phase F（统一图表）→ Phase 5（--stage final 强制再校验）
 | 宿主 hook | `hooks/selftest.py` **6/6 passed** |
 | 工具漂移 | `tools_sync_checker --mode strict`（分支 vs 主仓库）**exit 0，`differs_unexpected = 0`**；白名单：`doctor.py`、`pipeline_check.py`、`workflow_runner.py`、`tools_sync_checker.py`、`design_board_checker.py`、`migrate_workspace.py`（后两个是 §21.2/§21.3 的分支专属适配） |
 | `git diff --check` | 干净 |
+
+---
+
+## 22. 双闸门改造（1.2.0-per-question）
+
+### 22.1 两闸门职责
+
+| | A 闸门（Phase 0.5，整题一次） | B 闸门（Phase 1.5-Q，每问一次） |
+|---|---|---|
+| 板 | 根 `design_board.json`（schema 2） | `questions/qN/design_board_gate_b.json` |
+| 回答 | 题目读对了吗？高危假设？探索哪些范式？ | 这一问用哪个模型？ |
+| 证据 | `paradigm_set` / `paradigm_selection` | `model_advice.json` + `perspective_trials.json` |
+| 阻断 | 进小问循环与任何代码 | 该问 Phase 2-Q/3-Q 与 `questions/qN/solution.*` |
+
+### 22.2 A 板要点
+
+- 每题 `paradigm_set` 3–5 项（`paradigm_id/name/family/source_ref/why_explore/explore_cost`），至少 1 个异质 `family`；
+- `paradigm_selection` ≥2 项且覆盖 ≥2 族；`options: []`、`user_choice: null`、`user_locked: false`；
+- `mini_trial` 由必填降为可选；旧板（schema<2）语义与失败码逐字保留。
+
+### 22.3 B 板要点
+
+- 每问一块，路径 `questions/qN/design_board_gate_b.json`，回执 `design_rounds_gate_b/`；
+- `model_advice.json`：恰好 1 recommended、候选 5–8、全部有分、pros/cons ≥2、不推荐项 `why_not`≥2 + `when_better`、`is_judge_panel:false`；
+- 指标分层：`comparable`（跨候选同键）+ `own`（各模型自己的指标）；
+- `perspective_trials.json`：slices ≥2、perspectives ≥5、每 run `executed_by:"tool"`；**唯一写入口 `tools/perspective_trial_runner.py`**；
+- `data_comparison` 每格可按 `(option_id, slice_id)` 回溯到 trials，数值一致（1e-9）。
+
+### 22.4 双时间线与按题对账
+
+- A：`code_written_before_gate_a`（旧板仍报 `code_written_before_confirm`）；
+- B：`code_written_before_gate_b`，以 `questions/qN` 为根逐问比；
+- 时间线扫描同时覆盖根与 `questions/qN/`；`perspective_trials/**` 永不计入；
+- **板缺失 + 有交付代码 = error（strict/excellence）**，standard 仅 warning；
+- 交叉校验按题对账：`questions/<id>/model_selection_audit.json` → 根回退；A 组只报 `paradigm_audit_pending`。
+
+### 22.5 hook 守卫
+
+`questions/<qid>/` 下交付代码要求该问 B 板已确认；根交付代码要求 A 板确认（A 板 schema≥2 时还要求 B 板）；`perspective_trials/**` 放行；legacy 放行 + warning。
+
+### 22.6 每个小问的节奏
+
+```
+Phase 1-Q（五视角 + 试算）
+  → Phase 1.5-Q（B 闸门：建议 → render --gate b → 用户选 → confirm）
+  → 裁决 Agent 按 user_choice 产出该问产物
+  → Phase 2-Q/3-Q（此时才允许写 questions/qN/solution.*）
+  → Phase 4-Q → 完成宣告 → 下一问
+```
+
+### 22.7 迁移与兼容
+
+存在 A 板但无 B 板 → `legacy_gate_a_only: true`（excellence 下 B 缺口 error、standard warning）；已写完代码 → `legacy_pre_two_gate: true`；`user_locked: true` 迁移时置 false 并写 `migrated_release_lock: true`；**不得伪造 B 板**。
